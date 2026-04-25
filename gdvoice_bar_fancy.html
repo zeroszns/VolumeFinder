@@ -1,0 +1,193 @@
+
+<style>
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+.jump-pulse { animation: pulse-ring 0.4s ease-out forwards; }
+@keyframes tick-in {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+</style>
+
+<div style="padding: 2rem 0; display:flex; flex-direction:column; align-items:center; gap:0;">
+
+  <button id="startBtn" style="font-size:14px; padding:9px 24px; cursor:pointer; margin-bottom: 2rem;">Click to enable mic</button>
+
+  <div id="main" style="width:100%; max-width:540px; background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding: 20px 24px; display:flex; flex-direction:column; gap:0;">
+
+    <div style="display:flex; align-items:center; gap:16px;">
+
+      <div style="position:relative; width:48px; height:48px; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
+        <div id="ringOuter" style="position:absolute; width:48px; height:48px; border-radius:50%; border: 2px solid #1D9E75; opacity:0;"></div>
+        <div id="dot" style="width:14px; height:14px; border-radius:50%; background:#1D9E75;"></div>
+      </div>
+
+      <div style="flex:1; display:flex; flex-direction:column; gap:8px;">
+
+        <div style="position:relative; width:100%; height:28px; background:var(--color-background-secondary); border-radius:999px; border:0.5px solid var(--color-border-tertiary); overflow:hidden;">
+          <div id="barFill" style="position:absolute; left:0; top:0; height:100%; width:0%; border-radius:999px; background:#1D9E75; transition: width 0.05s linear, background 0.15s ease;"></div>
+          <div id="barGhost" style="position:absolute; left:0; top:0; height:100%; width:0%; border-radius:999px; background:#1D9E75; opacity:0.2;"></div>
+          <div id="tickMark" style="position:absolute; top:0; height:100%; width:2px; background:var(--color-border-secondary); border-radius:0;" ></div>
+          <div style="position:absolute; right:10px; top:50%; transform:translateY(-50%); font-size:11px; color:var(--color-text-tertiary); font-family:var(--font-mono);" id="unitInBar">0</div>
+        </div>
+
+        <div style="display:flex; align-items:baseline; gap:8px;">
+          <span id="statusVal" style="font-size:26px; font-weight:500; color:var(--color-text-secondary); line-height:1; transition: color 0.15s ease;">idle</span>
+          <span id="unitLabel" style="font-size:13px; color:var(--color-text-tertiary); font-family:var(--font-mono);">0 units</span>
+        </div>
+
+      </div>
+    </div>
+
+    <div style="margin-top:14px; height:40px; position:relative; overflow:hidden;">
+      <canvas id="sparkCanvas" style="width:100%; height:100%;"></canvas>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const btn = document.getElementById('startBtn');
+const barFill = document.getElementById('barFill');
+const barGhost = document.getElementById('barGhost');
+const tickMark = document.getElementById('tickMark');
+const statusVal = document.getElementById('statusVal');
+const unitLabel = document.getElementById('unitLabel');
+const unitInBar = document.getElementById('unitInBar');
+const dot = document.getElementById('dot');
+const ringOuter = document.getElementById('ringOuter');
+const sparkCanvas = document.getElementById('sparkCanvas');
+const sCtx = sparkCanvas.getContext('2d');
+
+const JUMP = 4500;
+const MAX = 20000;
+const MULT = 37000;
+const TICK_PCT = JUMP / MAX;
+
+let ghostPct = 0;
+let history = [];
+const MAX_HIST = 300;
+let wasJump = false;
+
+function resize() {
+  sparkCanvas.width = sparkCanvas.offsetWidth * devicePixelRatio;
+  sparkCanvas.height = sparkCanvas.offsetHeight * devicePixelRatio;
+  sCtx.scale(devicePixelRatio, devicePixelRatio);
+  const w = sparkCanvas.offsetWidth;
+  tickMark.style.left = Math.round(TICK_PCT * (document.getElementById('main').offsetWidth - 48 - 16 - 48)) + 'px';
+}
+
+function color(units) {
+  if (units >= JUMP) return '#E24B4A';
+  const p = units / JUMP;
+  if (p > 0.75) return '#EF9F27';
+  return '#1D9E75';
+}
+
+function triggerPulse(c) {
+  ringOuter.style.borderColor = c;
+  ringOuter.style.opacity = '0.6';
+  ringOuter.style.transform = 'scale(1)';
+  ringOuter.classList.remove('jump-pulse');
+  void ringOuter.offsetWidth;
+  ringOuter.classList.add('jump-pulse');
+}
+
+function drawSpark(pct, c) {
+  const w = sparkCanvas.offsetWidth;
+  const h = sparkCanvas.offsetHeight;
+  history.push({ pct, c });
+  if (history.length > MAX_HIST) history.shift();
+  sCtx.clearRect(0, 0, w, h);
+  if (history.length < 2) return;
+
+  sCtx.beginPath();
+  for (let i = 0; i < history.length; i++) {
+    const x = (i / MAX_HIST) * w;
+    const y = h - history[i].pct * h * 0.85 - 2;
+    i === 0 ? sCtx.moveTo(x, y) : sCtx.lineTo(x, y);
+  }
+  sCtx.lineTo((history.length / MAX_HIST) * w, h);
+  sCtx.lineTo(0, h);
+  sCtx.closePath();
+  const fillC = pct >= JUMP/MAX ? 'rgba(226,75,74,0.1)' : pct > 0.5 ? 'rgba(239,159,39,0.1)' : 'rgba(29,158,117,0.08)';
+  sCtx.fillStyle = fillC;
+  sCtx.fill();
+
+  sCtx.beginPath();
+  sCtx.strokeStyle = c;
+  sCtx.lineWidth = 1.5;
+  for (let i = 0; i < history.length; i++) {
+    const x = (i / MAX_HIST) * w;
+    const y = h - history[i].pct * h * 0.85 - 2;
+    i === 0 ? sCtx.moveTo(x, y) : sCtx.lineTo(x, y);
+  }
+  sCtx.stroke();
+
+  const tx = ((history.length - 1) / MAX_HIST) * w;
+  const ty = h - pct * h * 0.85 - 2;
+  sCtx.beginPath();
+  sCtx.arc(tx, ty, 3, 0, Math.PI * 2);
+  sCtx.fillStyle = c;
+  sCtx.fill();
+}
+
+btn.addEventListener('click', async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    btn.style.display = 'none';
+    resize();
+    window.addEventListener('resize', resize);
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.5;
+    source.connect(analyser);
+    const buf = new Uint8Array(analyser.frequencyBinCount);
+
+    function draw() {
+      requestAnimationFrame(draw);
+      analyser.getByteTimeDomainData(buf);
+      let sq = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i]-128)/128; sq += v*v; }
+      const rms = Math.sqrt(sq / buf.length);
+      const units = Math.round(rms * MULT);
+      const pct = Math.min(units / MAX, 1);
+      const c = color(units);
+
+      barFill.style.width = Math.round(pct * 100) + '%';
+      barFill.style.background = c;
+
+      if (pct > ghostPct) ghostPct = pct;
+      else ghostPct *= 0.992;
+      barGhost.style.width = Math.round(ghostPct * 100) + '%';
+      barGhost.style.background = c;
+
+      dot.style.background = c;
+      unitInBar.textContent = units.toLocaleString();
+      unitLabel.textContent = units.toLocaleString() + ' units';
+
+      const isJump = units >= JUMP;
+      if (isJump) {
+        statusVal.textContent = 'JUMP';
+        statusVal.style.color = '#E24B4A';
+        if (!wasJump) triggerPulse('#E24B4A');
+      } else {
+        statusVal.textContent = 'idle';
+        statusVal.style.color = 'var(--color-text-secondary)';
+      }
+      wasJump = isJump;
+
+      drawSpark(pct, c);
+    }
+    draw();
+  } catch(e) {
+    btn.textContent = 'Mic access denied';
+    btn.disabled = true;
+  }
+});
+</script>
