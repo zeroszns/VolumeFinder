@@ -1,0 +1,87 @@
+
+<h2 class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);">Voice volume bar with idle and jump status</h2>
+
+<div style="padding: 1.5rem 0; display:flex; flex-direction:column; align-items:center; gap:1.5rem;">
+
+  <button id="startBtn" style="font-size:15px; padding:10px 28px; cursor:pointer;">Click to enable mic</button>
+
+  <div style="width:100%; max-width:520px; display:flex; flex-direction:column; gap:14px;">
+
+    <div style="width:100%; height:40px; background:var(--color-background-secondary); border-radius:var(--border-radius-md); border:0.5px solid var(--color-border-tertiary); overflow:hidden;">
+      <div id="bar" style="height:100%; width:0%; border-radius:var(--border-radius-md); background:#1D9E75; transition:width 0.05s linear;"></div>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:0 2px;">
+      <span id="unitLabel" style="font-size:13px; color:var(--color-text-secondary);">0 units</span>
+      <span id="statusVal" style="font-size:22px; font-weight:500; color:var(--color-text-secondary);">idle</span>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+const btn = document.getElementById('startBtn');
+const bar = document.getElementById('bar');
+const unitLabel = document.getElementById('unitLabel');
+const statusVal = document.getElementById('statusVal');
+
+const JUMP_THRESHOLD = 4500;
+const MAX_UNITS = 20000;
+const MULTIPLIER = 37000;
+
+function getColor(units) {
+  if (units >= JUMP_THRESHOLD) return '#E24B4A';
+  const pct = units / JUMP_THRESHOLD;
+  if (pct < 0.6) return '#1D9E75';
+  return '#EF9F27';
+}
+
+btn.addEventListener('click', async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    btn.style.display = 'none';
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.5;
+    source.connect(analyser);
+
+    const bufLen = analyser.frequencyBinCount;
+    const dataArr = new Uint8Array(bufLen);
+
+    function draw() {
+      requestAnimationFrame(draw);
+      analyser.getByteTimeDomainData(dataArr);
+
+      let sumSq = 0;
+      for (let i = 0; i < bufLen; i++) {
+        const v = (dataArr[i] - 128) / 128;
+        sumSq += v * v;
+      }
+      const rms = Math.sqrt(sumSq / bufLen);
+      const units = Math.round(rms * MULTIPLIER);
+      const pct = Math.min(units / MAX_UNITS, 1);
+
+      bar.style.width = Math.round(pct * 100) + '%';
+      bar.style.background = getColor(units);
+      unitLabel.textContent = units + ' units';
+
+      if (units >= JUMP_THRESHOLD) {
+        statusVal.textContent = 'JUMP';
+        statusVal.style.color = '#E24B4A';
+      } else {
+        statusVal.textContent = 'idle';
+        statusVal.style.color = 'var(--color-text-secondary)';
+      }
+    }
+
+    draw();
+  } catch (e) {
+    btn.textContent = 'Mic access denied — check browser permissions';
+    btn.disabled = true;
+  }
+});
+</script>
