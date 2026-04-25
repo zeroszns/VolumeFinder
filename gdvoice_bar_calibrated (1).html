@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GD Voice Bar</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+.jump-pulse { animation: pulse-ring 0.35s ease-out forwards; }
+#card {
+  width: 460px;
+  background: rgba(10, 10, 14, 0.88);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+#top-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+#dot-wrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#ring {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid #1D9E75;
+  opacity: 0;
+}
+#dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #1D9E75;
+  transition: background 0.15s ease;
+}
+#bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#bar-track {
+  position: relative;
+  width: 100%;
+  height: 26px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 999px;
+  overflow: hidden;
+}
+#bar-ghost {
+  position: absolute;
+  left: 0; top: 0;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: #1D9E75;
+  opacity: 0.2;
+  transition: background 0.15s ease;
+}
+#bar-fill {
+  position: absolute;
+  left: 0; top: 0;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: #1D9E75;
+  transition: width 0.05s linear, background 0.15s ease;
+}
+#unit-in-bar {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  font-family: monospace;
+}
+#status-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+#status {
+  font-size: 24px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.35);
+  line-height: 1;
+  transition: color 0.15s ease;
+}
+#units {
+  font-size: 12px;
+  color: rgba(255,255,255,0.25);
+  font-family: monospace;
+}
+#spark-wrap {
+  height: 36px;
+  overflow: hidden;
+}
+#spark {
+  width: 100%;
+  height: 100%;
+}
+</style>
+</head>
+<body>
+<div id="card">
+  <div id="top-row">
+    <div id="dot-wrap">
+      <div id="ring"></div>
+      <div id="dot"></div>
+    </div>
+    <div id="bar-col">
+      <div id="bar-track">
+        <div id="bar-ghost"></div>
+        <div id="bar-fill"></div>
+        <span id="unit-in-bar">0</span>
+      </div>
+      <div id="status-row">
+        <span id="status">idle</span>
+        <span id="units">0 units</span>
+      </div>
+    </div>
+  </div>
+  <div id="spark-wrap">
+    <canvas id="spark"></canvas>
+  </div>
+</div>
+
+<script>
+const barFill = document.getElementById('bar-fill');
+const barGhost = document.getElementById('bar-ghost');
+const statusEl = document.getElementById('status');
+const unitsEl = document.getElementById('units');
+const unitInBar = document.getElementById('unit-in-bar');
+const dot = document.getElementById('dot');
+const ring = document.getElementById('ring');
+const sparkCanvas = document.getElementById('spark');
+const sCtx = sparkCanvas.getContext('2d');
+
+const JUMP = 4500;
+const MAX = 20000;
+const MULT = 37000;
+
+let ghostPct = 0;
+let history = [];
+const MAX_HIST = 300;
+let wasJump = false;
+
+function resizeSpark() {
+  sparkCanvas.width = sparkCanvas.offsetWidth * devicePixelRatio;
+  sparkCanvas.height = sparkCanvas.offsetHeight * devicePixelRatio;
+  sCtx.scale(devicePixelRatio, devicePixelRatio);
+}
+
+function color(units) {
+  if (units >= JUMP) return '#E24B4A';
+  if (units / JUMP > 0.75) return '#EF9F27';
+  return '#1D9E75';
+}
+
+function triggerPulse(c) {
+  ring.style.borderColor = c;
+  ring.style.opacity = '0.7';
+  ring.style.transform = 'scale(1)';
+  ring.classList.remove('jump-pulse');
+  void ring.offsetWidth;
+  ring.classList.add('jump-pulse');
+}
+
+function drawSpark(pct, c) {
+  const w = sparkCanvas.offsetWidth;
+  const h = sparkCanvas.offsetHeight;
+  history.push({ pct, c });
+  if (history.length > MAX_HIST) history.shift();
+  sCtx.clearRect(0, 0, w, h);
+  if (history.length < 2) return;
+
+  sCtx.beginPath();
+  for (let i = 0; i < history.length; i++) {
+    const x = (i / MAX_HIST) * w;
+    const y = h - history[i].pct * h * 0.9 - 1;
+    i === 0 ? sCtx.moveTo(x, h) : null;
+    sCtx.lineTo(x, y);
+  }
+  sCtx.lineTo((history.length / MAX_HIST) * w, h);
+  sCtx.closePath();
+  sCtx.fillStyle = pct >= JUMP/MAX ? 'rgba(226,75,74,0.12)' : pct > 0.5 ? 'rgba(239,159,39,0.1)' : 'rgba(29,158,117,0.1)';
+  sCtx.fill();
+
+  sCtx.beginPath();
+  sCtx.strokeStyle = c;
+  sCtx.lineWidth = 1.5;
+  for (let i = 0; i < history.length; i++) {
+    const x = (i / MAX_HIST) * w;
+    const y = h - history[i].pct * h * 0.9 - 1;
+    i === 0 ? sCtx.moveTo(x, y) : sCtx.lineTo(x, y);
+  }
+  sCtx.stroke();
+
+  const tx = ((history.length - 1) / MAX_HIST) * w;
+  const ty = h - pct * h * 0.9 - 1;
+  sCtx.beginPath();
+  sCtx.arc(tx, ty, 3, 0, Math.PI * 2);
+  sCtx.fillStyle = c;
+  sCtx.fill();
+}
+
+function startMic() {
+  navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(stream => {
+    resizeSpark();
+    window.addEventListener('resize', resizeSpark);
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.5;
+    source.connect(analyser);
+    const buf = new Uint8Array(analyser.frequencyBinCount);
+
+    function draw() {
+      requestAnimationFrame(draw);
+      analyser.getByteTimeDomainData(buf);
+      let sq = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const v = (buf[i] - 128) / 128;
+        sq += v * v;
+      }
+      const rms = Math.sqrt(sq / buf.length);
+      const units = Math.round(rms * MULT);
+      const pct = Math.min(units / MAX, 1);
+      const c = color(units);
+
+      barFill.style.width = Math.round(pct * 100) + '%';
+      barFill.style.background = c;
+
+      if (pct > ghostPct) ghostPct = pct;
+      else ghostPct *= 0.992;
+      barGhost.style.width = Math.round(ghostPct * 100) + '%';
+      barGhost.style.background = c;
+
+      dot.style.background = c;
+      unitInBar.textContent = units.toLocaleString();
+      unitsEl.textContent = units.toLocaleString() + ' units';
+
+      const isJump = units >= JUMP;
+      if (isJump) {
+        statusEl.textContent = 'JUMP';
+        statusEl.style.color = '#E24B4A';
+        if (!wasJump) triggerPulse('#E24B4A');
+      } else {
+        statusEl.textContent = 'idle';
+        statusEl.style.color = 'rgba(255,255,255,0.35)';
+      }
+      wasJump = isJump;
+      drawSpark(pct, c);
+    }
+    draw();
+  }).catch(() => {
+    setTimeout(startMic, 1000);
+  });
+}
+
+startMic();
+</script>
+</body>
+</html>
